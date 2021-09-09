@@ -177,6 +177,7 @@ class SamplesLoss(Module):
         self,
         loss="sinkhorn",
         p=2,
+        params=None,
         blur=0.05,
         reach=None,
         diameter=None,
@@ -195,6 +196,7 @@ class SamplesLoss(Module):
         self.loss = loss
         self.backend = backend
         self.p = p
+        self.params= params
         self.blur = blur
         self.reach = reach
         self.truncate = truncate
@@ -213,7 +215,7 @@ class SamplesLoss(Module):
         Documentation and examples: Soon!
         Until then, please check the tutorials :-)"""
 
-        l_x, α, x, l_y, β, y = self.process_args(*args)
+        l_x, α, x, l_y, β, y, params = self.process_args(*args)
         B, N, M, D, l_x, α, l_y, β = self.check_shapes(l_x, α, x, l_y, β, y)
 
         backend = (
@@ -297,20 +299,37 @@ class SamplesLoss(Module):
                     return values  # The user expects a "batch vector" of distances
 
     def process_args(self, *args):
-        if len(args) == 6:
-            return args
-        if len(args) == 4:
-            α, x, β, y = args
-            return None, α, x, None, β, y
-        elif len(args) == 2:
-            x, y = args
-            α = self.generate_weights(x)
-            β = self.generate_weights(y)
-            return None, α, x, None, β, y
+        if self.params is None:
+            if len(args) == 6:
+                return args
+            if len(args) == 4:
+                α, x, β, y = args
+                return None, α, x, None, β, y, None
+            elif len(args) == 2:
+                x, y = args
+                α = self.generate_weights(x)
+                β = self.generate_weights(y)
+                return None, α, x, None, β, y, None
+            else:
+                raise ValueError(
+                    "A SamplesLoss accepts two (x, y), four (α, x, β, y) or six (l_x, α, x, l_y, β, y)  arguments."
+                )
         else:
-            raise ValueError(
-                "A SamplesLoss accepts two (x, y), four (α, x, β, y) or six (l_x, α, x, l_y, β, y)  arguments."
-            )
+            if len(args) == 7:
+                return args
+            if len(args) == 5:
+                α, x, β, y, params= args
+                return None, α, x, None, β, y, params
+            elif len(args) == 3:
+                x, y, params = args
+                α = self.generate_weights(x)
+                β = self.generate_weights(y)
+                return None, α, x, None, β, y, params
+            else:
+                raise ValueError(
+                    "incorrect arguments."
+                )
+
 
     def generate_weights(self, x):
         if x.dim() == 2:  #
