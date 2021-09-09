@@ -17,7 +17,7 @@ from .kernel_samples import kernel_multiscale as hausdorff_multiscale
 routines = {
     "sinkhorn": {
         "tensorized": sinkhorn_tensorized,
-        "online": sinkhorn_online,
+        "online": sinkhorn_online,  # only adding optional parameters to this routine
         "multiscale": sinkhorn_multiscale,
     },
     "hausdorff": {
@@ -215,8 +215,8 @@ class SamplesLoss(Module):
         Documentation and examples: Soon!
         Until then, please check the tutorials :-)"""
 
-        l_x, α, x, l_y, β, y, params = self.process_args(*args)
-        B, N, M, D, l_x, α, l_y, β = self.check_shapes(l_x, α, x, l_y, β, y)
+        l_x, α, x, l_y, β, y, param = self.process_args(*args)
+        B, N, M, D, l_x, α, l_y, β = self.check_shapes(l_x, α, x, l_y, β, y) # could check params is correct list 
 
         backend = (
             self.backend
@@ -259,12 +259,14 @@ class SamplesLoss(Module):
             α, x, β, y = α.unsqueeze(0), x.unsqueeze(0), β.unsqueeze(0), y.unsqueeze(0)
 
         # Run --------------------------------------------------------------------------------
-        values = routines[self.loss][backend](
+        values = routines[self.loss][backend](  # only changing for backend='online'
             α,
             x,
             β,
             y,
             p=self.p,
+            param=param,
+            params=self.params,  # I'm confused as looks like the call creates new function every call
             blur=self.blur,
             reach=self.reach,
             diameter=self.diameter,
@@ -318,18 +320,17 @@ class SamplesLoss(Module):
             if len(args) == 7:
                 return args
             if len(args) == 5:
-                α, x, β, y, params= args
-                return None, α, x, None, β, y, params
+                α, x, β, y, param = args
+                return None, α, x, None, β, y, param
             elif len(args) == 3:
-                x, y, params = args
+                x, y, param = args
                 α = self.generate_weights(x)
                 β = self.generate_weights(y)
-                return None, α, x, None, β, y, params
+                return None, α, x, None, β, y, param
             else:
                 raise ValueError(
                     "incorrect arguments."
                 )
-
 
     def generate_weights(self, x):
         if x.dim() == 2:  #
