@@ -133,30 +133,31 @@ cost_formulas = {
 }
 
 
-def lse_genred(cost, D, params=None, dtype="float32"):
+def lse_genred(cost, D, R_param=False, dtype="float32"):
     """Legacy "Genred" implementation, with low-level KeOps formulas."""
 
-    if params is not None:
-        al = [
+    if R_param:
+        log_conv = generic_logsumexp(
+            "( B - (P * " + cost + " ) )",
+            "A = Vi(1)",
             "X = Vi({})".format(D),
             "Y = Vj({})".format(D),
             "B = Vj(1)",
-            "P = Pm(1)"
-        ] + params
-    else:
-        al = [
-            "X = Vi({})".format(D),
-            "Y = Vj({})".format(D),
-            "B = Vj(1)",
-            "P = Pm(1)"
-        ]
+            "P = Pm(1)",
+            "R = Pm(1)",
+            dtype=dtype,
+        )
 
-    log_conv = generic_logsumexp(
-        "( B - (P * " + cost + " ) )",
-        "A = Vi(1)",
-        al,
-        dtype=dtype,
-    )
+    else:
+        log_conv = generic_logsumexp(
+            "( B - (P * " + cost + " ) )",
+            "A = Vi(1)",
+            "X = Vi({})".format(D),
+            "Y = Vj({})".format(D),
+            "B = Vj(1)",
+            "P = Pm(1)",
+            dtype=dtype,
+        )
 
     return log_conv
 
@@ -169,7 +170,7 @@ def softmin_online(ε, C_xy, f_y, log_conv=None):
     batch = x.dim() > 2
     B = x.shape[0]
     f = f_y.view(B, -1, 1) if batch else f_y.view(-1, 1)
-    out = -ε * log_conv(x, y, f, torch.Tensor([1 / ε]).type_as(x))   # list of actual parameter values, not list of string
+    out = -ε * log_conv(x, y, f, torch.Tensor([1 / ε]).type_as(x))
     #print(out.requires_grad)
 
     return out.view(B, -1) if batch else out.view(1, -1)
@@ -180,9 +181,9 @@ def sinkhorn_online(
     x,
     β,
     y,
+    R,
     p=2,
-    param=None,
-    params=None,
+    R_param=False,
     blur=0.05,
     reach=None,
     diameter=None,
@@ -217,17 +218,17 @@ def sinkhorn_online(
         if cost is None:
             cost = cost_formulas[p]
 
-        my_lse = lse_genred(cost, D, params=params, dtype=str(x.dtype)[6:])
+        my_lse = lse_genred(cost, D, R_param=R_param, dtype=str(x.dtype)[6:])
 
-        # need to pass params through now, using partial etc before forming softmin
-        def my_lse_1(list_of_para):
-            return lambda x, y, b, p: my_lse(x, y, b, p, list_of_para)
+        def my_lse_1(R):
+            return lambda x, y, b, p: my_lse(x, y, b, p, R)
 
-        softmin = partial(softmin_online, log_conv=my_lse_1(param))
-        # if params:
-        #     for j, k in enumerate(params):
-        #         param_name = k[0]   # noqa F841
-        #         softmin = partial(softmin, param_name=param[j])
+        if R_param:
+            my_lse = my_lse_1(R)
+            print(my_lse)
+            softmin = partial(softmin_online, log_conv=my_lse)
+        else:
+            softmin = partial(softmin_online, log_conv=my_lse)
 
     # The "cost matrices" are implicitly encoded in the point clouds,
     # and re-computed on-the-fly:

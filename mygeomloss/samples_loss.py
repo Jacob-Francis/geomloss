@@ -177,7 +177,7 @@ class SamplesLoss(Module):
         self,
         loss="sinkhorn",
         p=2,
-        params=None,
+        R_param=False,
         blur=0.05,
         reach=None,
         diameter=None,
@@ -196,7 +196,7 @@ class SamplesLoss(Module):
         self.loss = loss
         self.backend = backend
         self.p = p
-        self.params= params
+        self.R_param = R_param
         self.blur = blur
         self.reach = reach
         self.truncate = truncate
@@ -209,14 +209,14 @@ class SamplesLoss(Module):
         self.potentials = potentials
         self.verbose = verbose
 
-    def forward(self, *args, param=None):
+    def forward(self, *args):
         """Computes the loss between sampled measures.
 
         Documentation and examples: Soon!
         Until then, please check the tutorials :-)"""
 
-        l_x, α, x, l_y, β, y = self.process_args(*args)
-        B, N, M, D, l_x, α, l_y, β = self.check_shapes(l_x, α, x, l_y, β, y) # could check params is correct list 
+        l_x, α, x, l_y, β, y, R = self.process_args(*args)
+        B, N, M, D, l_x, α, l_y, β = self.check_shapes(l_x, α, x, l_y, β, y)
 
         backend = (
             self.backend
@@ -264,9 +264,9 @@ class SamplesLoss(Module):
             x,
             β,
             y,
+            R,
             p=self.p,
-            param=param,
-            params=self.params,  # I'm confused as looks like the call creates new function every call
+            R_param=self.R_param,
             blur=self.blur,
             reach=self.reach,
             diameter=self.diameter,
@@ -301,20 +301,37 @@ class SamplesLoss(Module):
                     return values  # The user expects a "batch vector" of distances
 
     def process_args(self, *args):
-        if len(args) == 6:
-            return args
-        if len(args) == 4:
-            α, x, β, y = args
-            return None, α, x, None, β, y
-        elif len(args) == 2:
-            x, y = args
-            α = self.generate_weights(x)
-            β = self.generate_weights(y)
-            return None, α, x, None, β, y
+        if not self.R_param:
+            if len(args) == 6:
+                return args
+            if len(args) == 4:
+                α, x, β, y = args
+                return None, α, x, None, β, y
+            elif len(args) == 2:
+                x, y = args
+                α = self.generate_weights(x)
+                β = self.generate_weights(y)
+                return None, α, x, None, β, y
+            else:
+                raise ValueError(
+                    "A SamplesLoss accepts two (x, y), four (α, x, β, y) or six (l_x, α, x, l_y, β, y)  arguments."
+                )
         else:
-            raise ValueError(
-                "A SamplesLoss accepts two (x, y), four (α, x, β, y) or six (l_x, α, x, l_y, β, y)  arguments."
-            )
+            if len(args) == 7:
+                return args
+            if len(args) == 45:
+                α, x, β, y, R = args
+                return None, α, x, None, β, y, R
+            elif len(args) == 3:
+                x, y, R = args
+                α = self.generate_weights(x)
+                β = self.generate_weights(y)
+                return None, α, x, None, β, y, R
+            else:
+                raise ValueError(
+                    "A SamplesLoss accepts two (x, y), four (α, x, β, y) or six (l_x, α, x, l_y, β, y)  arguments."
+                )
+
 
     def generate_weights(self, x):
         if x.dim() == 2:  #
