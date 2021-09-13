@@ -303,15 +303,15 @@ class SamplesLoss(Module):
     def process_args(self, *args):
         if not self.R_param:
             if len(args) == 6:
-                return args
+                return args, None
             if len(args) == 4:
                 α, x, β, y = args
-                return None, α, x, None, β, y
+                return None, α, x, None, β, y, None
             elif len(args) == 2:
                 x, y = args
                 α = self.generate_weights(x)
                 β = self.generate_weights(y)
-                return None, α, x, None, β, y
+                return None, α, x, None, β, y, None
             else:
                 raise ValueError(
                     "A SamplesLoss accepts two (x, y), four (α, x, β, y) or six (l_x, α, x, l_y, β, y)  arguments."

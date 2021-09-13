@@ -147,7 +147,6 @@ def lse_genred(cost, D, R_param=False, dtype="float32"):
             "R = Pm(1)",
             dtype=dtype,
         )
-
     else:
         log_conv = generic_logsumexp(
             "( B - (P * " + cost + " ) )",
@@ -162,16 +161,19 @@ def lse_genred(cost, D, R_param=False, dtype="float32"):
     return log_conv
 
 
-def softmin_online(ε, C_xy, f_y, log_conv=None):
+def softmin_online(ε, C_xy, f_y, R=None, R_param=False, log_conv=None):
     x, y = C_xy
     # KeOps is pretty picky on the input shapes...
-    #print(x.requires_grad, y.requires_grad, f_y.requires_grad)
+    # print(x.requires_grad, y.requires_grad, f_y.requires_grad)
 
     batch = x.dim() > 2
     B = x.shape[0]
     f = f_y.view(B, -1, 1) if batch else f_y.view(-1, 1)
-    out = -ε * log_conv(x, y, f, torch.Tensor([1 / ε]).type_as(x))
-    #print(out.requires_grad)
+    if R_param:
+        out = -ε * log_conv(x, y, f, torch.Tensor([1 / ε]).type_as(x), R)
+    else:
+        out = -ε * log_conv(x, y, f, torch.Tensor([1 / ε]).type_as(x))
+    # print(out.requires_grad)
 
     return out.view(B, -1) if batch else out.view(1, -1)
 
@@ -219,16 +221,7 @@ def sinkhorn_online(
             cost = cost_formulas[p]
 
         my_lse = lse_genred(cost, D, R_param=R_param, dtype=str(x.dtype)[6:])
-
-        def my_lse_1(R):
-            return lambda x, y, b, p: my_lse(x, y, b, p, R)
-
-        if R_param:
-            my_lse = my_lse_1(R)
-            print(my_lse)
-            softmin = partial(softmin_online, log_conv=my_lse)
-        else:
-            softmin = partial(softmin_online, log_conv=my_lse)
+        softmin = partial(softmin_online, log_conv=my_lse, R_param=R_param)
 
     # The "cost matrices" are implicitly encoded in the point clouds,
     # and re-computed on-the-fly:
@@ -238,8 +231,9 @@ def sinkhorn_online(
     diameter, ε, ε_s, ρ = scaling_parameters(x, y, p, blur, reach, diameter, scaling)
 
     a_x, b_y, a_y, b_x = sinkhorn_loop(softmin,
-                                       log_weights(α), log_weights(β), 
-                                       C_xx, C_yy, C_xy, C_yx, ε_s, ρ, debias=debias)
+                                       log_weights(α), log_weights(β),
+                                       C_xx, C_yy, C_xy, C_yx, ε_s, ρ,
+                                       R=R, R_param=R_param, debias=debias)
 
     return sinkhorn_cost(ε, ρ, α, β, a_x, b_y, a_y, b_x, batch=True, debias=debias, potentials=potentials)
 
