@@ -159,8 +159,6 @@ def sinkhorn_loop(
     C_yxs,
     ε_s,
     ρ,
-    R,
-    R_param,
     jumps=[],
     kernel_truncation=None,
     truncate=5,
@@ -190,36 +188,22 @@ def sinkhorn_loop(
     C_xy, C_yx = C_xys[k], C_yxs[k]
 
     # Start with a decent initialization for the dual vectors:
-    if R_param:
-        if debias:
-            a_x = λ * softmin(ε, C_xx, α_log, R)  # OT(α,α)
-            b_y = λ * softmin(ε, C_yy, β_log, R)  # OT(β,β)
-        a_y = λ * softmin(ε, C_yx, α_log, R)  # OT(α,β) wrt. a
-        b_x = λ * softmin(ε, C_xy, β_log, R)  # OT(α,β) wrt. b
-    else:
-        if debias:
-            a_x = λ * softmin(ε, C_xx, α_log)  # OT(α,α)
-            b_y = λ * softmin(ε, C_yy, β_log)  # OT(β,β)
-        a_y = λ * softmin(ε, C_yx, α_log)  # OT(α,β) wrt. a
-        b_x = λ * softmin(ε, C_xy, β_log)
+    if debias:
+        a_x = λ * softmin(ε, C_xx, α_log)  # OT(α,α)
+        b_y = λ * softmin(ε, C_yy, β_log)  # OT(β,β)
+    a_y = λ * softmin(ε, C_yx, α_log)  # OT(α,β) wrt. a
+    b_x = λ * softmin(ε, C_xy, β_log)
 
     for i, ε in enumerate(ε_s):  # ε-scaling descent -----------------------
 
         λ = dampening(ε, ρ)  # ε has changed, so we should update λ too!
 
         # "Coordinate ascent" on the dual problems:
-        if R_param:
-            if debias:
-                at_x = λ * softmin(ε, C_xx, α_log + a_x / ε, R)  # OT(α,α)
-                bt_y = λ * softmin(ε, C_yy, β_log + b_y / ε, R)  # OT(β,β)
-            at_y = λ * softmin(ε, C_yx, α_log + b_x / ε, R)  # OT(α,β) wrt. a
-            bt_x = λ * softmin(ε, C_xy, β_log + a_y / ε, R)
-        else:
-            if debias:
-                at_x = λ * softmin(ε, C_xx, α_log + a_x / ε)  # OT(α,α)
-                bt_y = λ * softmin(ε, C_yy, β_log + b_y / ε)  # OT(β,β)
-            at_y = λ * softmin(ε, C_yx, α_log + b_x / ε)  # OT(α,β) wrt. a
-            bt_x = λ * softmin(ε, C_xy, β_log + a_y / ε)  # OT(α,β) wrt. b
+        if debias:
+            at_x = λ * softmin(ε, C_xx, α_log + a_x / ε)  # OT(α,α)
+            bt_y = λ * softmin(ε, C_yy, β_log + b_y / ε)  # OT(β,β)
+        at_y = λ * softmin(ε, C_yx, α_log + b_x / ε)  # OT(α,β) wrt. a
+        bt_x = λ * softmin(ε, C_xy, β_log + a_y / ε)  # OT(α,β) wrt. b
 
         # Symmetrized updates:
         if debias:
@@ -297,25 +281,14 @@ def sinkhorn_loop(
 
     if last_extrapolation:
         # Last extrapolation, to get the correct gradients:
-        if R_param:
-            if debias:
-                a_x = λ * softmin(ε, C_xx, (α_log + a_x / ε).detach(), R)
-                b_y = λ * softmin(ε, C_yy, (β_log + b_y / ε).detach(), R)
-        else:
-            if debias:
-                a_x = λ * softmin(ε, C_xx, (α_log + a_x / ε).detach())
-                b_y = λ * softmin(ε, C_yy, (β_log + b_y / ε).detach())
+        if debias:
+            a_x = λ * softmin(ε, C_xx, (α_log + a_x / ε).detach())
+            b_y = λ * softmin(ε, C_yy, (β_log + b_y / ε).detach())
 
         # The cross-updates should be done in parallel!
-        if R_param:
-            a_y, b_x = λ * softmin(ε, C_yx, (α_log + b_x / ε).detach(), R), λ * softmin(
-                ε, C_xy, (β_log + a_y / ε).detach(), R
-            )
-        else:
-            a_y, b_x = λ * softmin(ε, C_yx, (α_log + b_x / ε).detach()), λ * softmin(
-                ε, C_xy, (β_log + a_y / ε).detach()
-            )
-
+        a_y, b_x = λ * softmin(ε, C_yx, (α_log + b_x / ε).detach()), λ * softmin(
+            ε, C_xy, (β_log + a_y / ε).detach()
+        )
 
     if debias:
         return a_x, b_y, a_y, b_x

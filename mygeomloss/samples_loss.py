@@ -177,7 +177,7 @@ class SamplesLoss(Module):
         self,
         loss="sinkhorn",
         p=2,
-        R_param=False,
+        R_param=[],
         blur=0.05,
         reach=None,
         diameter=None,
@@ -301,7 +301,7 @@ class SamplesLoss(Module):
                     return values  # The user expects a "batch vector" of distances
 
     def process_args(self, *args):
-        if not self.R_param:
+        if len(self.R_param) == 0:
             if len(args) == 6:
                 return args, None
             if len(args) == 4:

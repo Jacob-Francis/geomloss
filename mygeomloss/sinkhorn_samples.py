@@ -133,35 +133,27 @@ cost_formulas = {
 }
 
 
-def lse_genred(cost, D, R_param=False, dtype="float32"):
+def lse_genred(cost, D, R_param=[], dtype="float32"):
     """Legacy "Genred" implementation, with low-level KeOps formulas."""
 
-    if R_param:
-        log_conv = generic_logsumexp(
-            "( B - (P * " + cost + " ) )",
-            "A = Vi(1)",
-            "X = Vi({})".format(D),
-            "Y = Vj({})".format(D),
-            "B = Vj(1)",
-            "P = Pm(1)",
-            "R = Pm(1)",
-            dtype=dtype,
-        )
-    else:
-        log_conv = generic_logsumexp(
-            "( B - (P * " + cost + " ) )",
-            "A = Vi(1)",
-            "X = Vi({})".format(D),
-            "Y = Vj({})".format(D),
-            "B = Vj(1)",
-            "P = Pm(1)",
-            dtype=dtype,
-        )
+    # aim so that cost can take any amount of extra arguments
+    aliases = [
+        "X = Vi({})".format(D),
+        "Y = Vj({})".format(D),
+        "B = Vj(1)",
+        "P = Pm(1)"
+    ] + R_param
 
+    log_conv = generic_logsumexp(
+        "( B - (P * " + cost + " ) )",
+        "A = Vi(1)",
+        *aliases,
+        dtype=dtype,
+    )
     return log_conv
 
 
-def softmin_online(ε, C_xy, f_y, R=None, R_param=False, log_conv=None):
+def softmin_online(ε, C_xy, f_y, log_conv=None):
     x, y = C_xy
     # KeOps is pretty picky on the input shapes...
     # print(x.requires_grad, y.requires_grad, f_y.requires_grad)
@@ -169,10 +161,7 @@ def softmin_online(ε, C_xy, f_y, R=None, R_param=False, log_conv=None):
     batch = x.dim() > 2
     B = x.shape[0]
     f = f_y.view(B, -1, 1) if batch else f_y.view(-1, 1)
-    if R_param:
-        out = -ε * log_conv(x, y, f, torch.Tensor([1 / ε]).type_as(x), R)
-    else:
-        out = -ε * log_conv(x, y, f, torch.Tensor([1 / ε]).type_as(x))
+    out = -ε * log_conv(x, y, f, torch.Tensor([1 / ε]).type_as(x))
     # print(out.requires_grad)
 
     return out.view(B, -1) if batch else out.view(1, -1)
@@ -185,7 +174,7 @@ def sinkhorn_online(
     y,
     R,
     p=2,
-    R_param=False,
+    R_param=[],
     blur=0.05,
     reach=None,
     diameter=None,
@@ -221,7 +210,15 @@ def sinkhorn_online(
             cost = cost_formulas[p]
 
         my_lse = lse_genred(cost, D, R_param=R_param, dtype=str(x.dtype)[6:])
-        softmin = partial(softmin_online, log_conv=my_lse, R_param=R_param)
+
+        if len(R_param) > 0:
+            def foo(my_lse, R):
+                return lambda x, y, z, w: my_lse(x, y, z, w, *R)
+            mylse = foo(my_lse, R)
+        else:
+            mylse = my_lse
+
+        softmin = partial(softmin_online, log_conv=mylse)
 
     # The "cost matrices" are implicitly encoded in the point clouds,
     # and re-computed on-the-fly:
@@ -232,8 +229,7 @@ def sinkhorn_online(
 
     a_x, b_y, a_y, b_x = sinkhorn_loop(softmin,
                                        log_weights(α), log_weights(β),
-                                       C_xx, C_yy, C_xy, C_yx, ε_s, ρ,
-                                       R=R, R_param=R_param, debias=debias)
+                                       C_xx, C_yy, C_xy, C_yx, ε_s, ρ, debias=debias)
 
     return sinkhorn_cost(ε, ρ, α, β, a_x, b_y, a_y, b_x, batch=True, debias=debias, potentials=potentials)
 
